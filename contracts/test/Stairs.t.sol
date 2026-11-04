@@ -411,4 +411,44 @@ contract StairsTest is Test {
       assertTrue(proceeds <= stairs.editionOf(id).reserve);
     }
   }
+
+  function test_MutationKillersSpecific() public {
+    // 1. Kill mutant at line 97: nameBytes.length == 48 (MAX_NAME_BYTES boundary)
+    string memory exact48 = "123456789012345678901234567890123456789012345678"; // 48 chars
+    assertEq(bytes(exact48).length, 48);
+    vm.prank(creator);
+    uint256 id48 = stairs.create(exact48, 10, BASE, STEP, BPS);
+    assertEq(stairs.editionOf(id48).name, exact48);
+
+    // 2. Kill mutant at line 280: offset == total (offset >= total vs offset > total)
+    // When offset == total, latest(total, count) should return empty array
+    (uint256[] memory idsEmpty, Stairs.Edition[] memory editionsEmpty, uint256 totalEmpty) = stairs.latest(stairs.editionCount(), 10);
+    assertEq(idsEmpty.length, 0);
+    assertEq(editionsEmpty.length, 0);
+    assertEq(totalEmpty, stairs.editionCount());
+
+    // 3. Kill mutant at line 287: offset + count > total clamp (count = total - offset vs count = total + offset)
+    // If offset = 0, total = 1, and count = 5, offset + count > total (5 > 1).
+    // Clamped count must be 1 - 0 = 1.
+    (uint256[] memory idsClamped, Stairs.Edition[] memory editionsClamped,) = stairs.latest(0, 5);
+    assertEq(idsClamped.length, 1);
+    assertEq(editionsClamped.length, 1);
+
+    // 4. Kill mutant at line 103: uint256 lastStep = uint256(cap) - 1 vs + 1
+    // Let cap = 2, base = 1 ether, step = 999_999 ether.
+    // cap - 1 = 1, so price(1) = 1 + 999_999 = 1_000_000 ether <= MAX_PRICE (valid).
+    // If mutant cap + 1 = 3: price(3) = 1 + 3 * 999_999 = 2_999_998 ether > MAX_PRICE, which would revert BadCurve!
+    vm.prank(creator);
+    uint256 idBoundary = stairs.create("BoundaryCurve", 2, 1 ether, 999_999 ether, 0);
+    assertTrue(idBoundary > 0);
+
+    // 5. Kill mutant at line 152: SoldOut(e.cap - e.supply vs e.cap + e.supply)
+    // Buy until supply = 1, cap = 2. Then try to buy 2. e.cap - e.supply is 2 - 1 = 1.
+    vm.deal(alice, 10_000_000 ether);
+    vm.prank(alice);
+    stairs.buy{value: 1 ether}(idBoundary, 1, 1 ether);
+    vm.prank(alice);
+    vm.expectRevert(abi.encodeWithSelector(Stairs.SoldOut.selector, 1));
+    stairs.buy{value: 1000000 ether}(idBoundary, 2, 1000000 ether);
+  }
 }
