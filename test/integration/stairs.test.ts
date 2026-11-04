@@ -1,12 +1,21 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, ChildProcess } from "node:child_process";
-import { createPublicClient, createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, defineChain, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { BOTCHAIN_ABI } from "../../lib/botchain/abi";
 import { quoteBuy, quoteSell } from "../../lib/stairs";
 
 const ANVIL_PORT = 8659;
 const RPC_URL = `http://127.0.0.1:${ANVIL_PORT}`;
+
+const localChain = defineChain({
+  id: 31337,
+  name: "Anvil Local",
+  nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
+  rpcUrls: {
+    default: { http: [RPC_URL] },
+  },
+});
 
 describe("Stairs Integration Test", () => {
   let anvil: ChildProcess;
@@ -16,6 +25,25 @@ describe("Stairs Integration Test", () => {
   const bobAccount = privateKeyToAccount("0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a");
 
   const publicClient = createPublicClient({
+    chain: localChain,
+    transport: http(RPC_URL),
+  });
+
+  const creatorClient = createWalletClient({
+    account: creatorAccount,
+    chain: localChain,
+    transport: http(RPC_URL),
+  });
+
+  const aliceClient = createWalletClient({
+    account: aliceAccount,
+    chain: localChain,
+    transport: http(RPC_URL),
+  });
+
+  const bobClient = createWalletClient({
+    account: bobAccount,
+    chain: localChain,
     transport: http(RPC_URL),
   });
 
@@ -35,12 +63,6 @@ describe("Stairs Integration Test", () => {
         await new Promise((r) => setTimeout(r, 200));
       }
     }
-
-    // Deploy Stairs contract
-    const creatorClient = createWalletClient({
-      account: creatorAccount,
-      transport: http(RPC_URL),
-    });
 
     const deployer = spawn(
       "forge",
@@ -79,19 +101,6 @@ describe("Stairs Integration Test", () => {
   });
 
   it("handles the full lifecycle: create -> quote parity -> buy -> price move -> sell -> withdraw", async () => {
-    const creatorClient = createWalletClient({
-      account: creatorAccount,
-      transport: http(RPC_URL),
-    });
-    const aliceClient = createWalletClient({
-      account: aliceAccount,
-      transport: http(RPC_URL),
-    });
-    const bobClient = createWalletClient({
-      account: bobAccount,
-      transport: http(RPC_URL),
-    });
-
     const base = 100_000_000_000_000_000n; // 0.1 ETH
     const step = 20_000_000_000_000_000n; // 0.02 ETH
     const cap = 50;
